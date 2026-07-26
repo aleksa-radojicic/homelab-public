@@ -165,7 +165,7 @@ flowchart LR
         Overlay["QCOW2 Overlay<br/>(backed by golden image)"]
         Terraform["Terraform"]
         Provider["libvirt Provider"]
-        Libvirt["libvirt / KVM"]
+        Libvirt["libvirt<br/>(QEMU + KVM)"]
         VM["Running VM"]
         PostSetup["Post-boot Configuration<br/>(Ansible: CA certs, homelab repo)"]
 
@@ -209,7 +209,7 @@ Each top-level directory represents a self-contained component. The most signifi
 ```
 
 ## Requirements
-- **Host**: Debian 13 with KVM support, rootless Docker, Tailscale
+- **Host**: Debian 13 with hardware virtualization enabled, rootless Docker, Tailscale
 - **Tools**: `direnv`, `just`, `ansible`
 - **Access**: A device connected to the homelab tailnet
 
