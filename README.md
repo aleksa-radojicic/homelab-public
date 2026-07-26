@@ -1,21 +1,35 @@
 # Homelab
-Self-hosted homelab on Debian 13 with rootless Docker, Tailscale mesh VPN and Pi-hole DNS. The code repository is private.
+A self-hosted, production-oriented infrastructure environment running on Debian 13 with rootless Docker, Tailscale networking, Pi-hole DNS, centralized observability and automated infrastructure and dependency management, hosting 20+ services across staging and production environments.
+
+Each major component is self-contained and includes its own `README.md` with deployment and configuration details.
+
+> This repository serves as a documentation mirror, while the implementation is maintained in a private repository.
 
 ## Architecture
 ```mermaid
 %%{init: {
-  'theme': 'neutral'
+  'theme': 'neutral',
+  'themeVariables': {
+    'fontSize': '14px'
+  },
+  'flowchart': {
+    'htmlLabels': true,
+    'padding': 15,
+    'nodeSpacing': 35,
+    'rankSpacing': 35
+  }
 }}%%
-flowchart LR
+flowchart TB
     subgraph External["<b>External</b>"]
         TailscaleClients["Tailscale Clients"]
     end
 
     subgraph DNS["<b>DNS Layer</b>"]
-        PiHoleDNS["Pi-hole<br/>127.0.0.1, tailscale0 :53"]
+        direction LR
+        PiHoleDNS["Pi-hole<br/>127.0.0.1 · tailscale0 :53"]
         Resolved["systemd-resolved<br/>127.0.0.1:5353"]
         UpstreamDNS["Upstream DNS"]
-        DnsmasqConfigs["dnsmasq.d configs<br>homelab, tailscale-magicdns"]
+        DnsmasqConfigs["dnsmasq.d configs<br/>homelab · MagicDNS"]
     end
 
     subgraph Ingress["<b>Reverse Proxy</b>"]
@@ -27,18 +41,21 @@ flowchart LR
     end
 
     subgraph Apps["<b>Application Layer</b>"]
-        ntfy
         Forgejo
         Immich
-        Syncthing["Syncthing Web UI"]
+        Syncthing["Syncthing<br/>Web UI"]
         Navidrome
+
+        subgraph Notifications
+            ntfy
+        end
     end
 
     subgraph Observability["<b>Observability Stack</b>"]
         direction LR
 
-        subgraph Collectors["Collectors"]
-            direction TB
+        subgraph Collectors
+        
             NodeExp["node_exporter"]
             CadvisorExp["cAdvisor"]
             BlackboxExp["Blackbox exporter"]
@@ -74,11 +91,9 @@ flowchart LR
 
     %% Ingress
     TailscaleClients -->|"*.homelab.internal"| Ingress
-    Ingress -->|"forward_auth"| Authelia
-    Ingress <-->|"exposes"| Apps
-    Ingress <-->|"exposes"| Grafana
-    Ingress <-->|"exposes"| Prometheus
-    Ingress <-->|"exposes"| Loki
+    Ingress -->|"forward_auth"| Auth
+    Ingress -->|"exposes"| Apps
+    Ingress -->|"exposes"| Storage
 
     %% Observability flow
     Collectors -->|"metrics; logs"| Alloy
@@ -86,17 +101,19 @@ flowchart LR
     Alloy -->|"logs"| Loki
     PiHoleDNS -->|"metrics"| PiholeExp
 
-    Prometheus -->|"datasource"| Grafana
-    Loki -->|"datasource"| Grafana
+    %% Cannot be rendered properly for 'layout': 'dagre'. Renders okay for layout 'elk' but it's feature incomplete (overall diagram looks awful).
+    %% Prometheus -->|"datasource"| Grafana
+    %% Loki -->|"datasource"| Grafana 
+    Storage -->|"datasource"| Consumers
     Prometheus -->|"alerts"| Alertmanager
     Alertmanager -->|"webhook"| AlertBridge
-    AlertBridge -->|"alerts"| ntfy
+    AlertBridge -->|"alerts"| Notifications
 
     %% Styling
-    classDef dns    fill:#1a3a5c,color:#fff,stroke:#0f2440
+    classDef dns fill:#1a3a5c,color:#fff,stroke:#0f2440
     classDef ingress fill:#b5a713,color:#fff,stroke:#402810
-    classDef app    fill:#558911,color:#fff,stroke:#281040
-    classDef obs    fill:#7a063c,color:#fff,stroke:#401020
+    classDef app fill:#558911,color:#fff,stroke:#281040
+    classDef obs fill:#7a063c,color:#fff,stroke:#401020
 
     class PiHoleDNS,Resolved,UpstreamDNS,DnsmasqConfigs dns
     class Caddy ingress
@@ -104,90 +121,120 @@ flowchart LR
     class Alloy,Prometheus,Loki,Grafana,Alertmanager,AlertBridge,NodeExp,CadvisorExp,BlackboxExp,DockerLogs,JournalLogs,FileLogs,SmartctlExp,SystemdExp,PiholeExp obs
 ```
 
-## Laptop Setup
+Services are reachable through the private Tailscale network without exposing the host directly to the public internet or requiring port forwarding. Caddy acts as the main ingress point, Authelia provides centralized authentication and Pi-hole internal DNS resolution.
 
+Alloy collects metrics and logs from the host, containers and additional Tailnet devices, forwarding them to centralized Prometheus and Loki instances. Grafana provides visualization, while Alertmanager routes alerts to ntfy.
+
+The homelab uses separate staging and production VMs. Changes can be tested in staging before being deployed to production.
+
+See [`observability/`](observability/README.md) for details.
+
+## Infrastructure Provisioning
 ```mermaid
 %%{init: {
-  'theme': 'neutral'
+  'theme': 'neutral',
+  'themeVariables': {
+    'fontSize': '11px'
+  },
+  'flowchart': {
+    'htmlLabels': true,
+    'padding': 15,
+    'nodeSpacing': 40
+  }
 }}%%
 flowchart LR
-    subgraph Laptop["<b>Laptop</b>"]
-        direction LR
+    subgraph Build["<b>Golden Image Build</b>"]
+        direction TB
 
-        subgraph Collectors["Collectors"]
-            direction TB
-            NodeExp["node_exporter"]
-            CadvisorExp["cAdvisor"]
-            DockerLogs["Docker container logs"]
-            JournalLogs["journald logs"]
-            FileLogs["/var/log/* files"]
-            SmartctlExp["smartctl_exporter"]
-            SystemdExp["systemd_exporter"]
-        end
+        Debian["Debian 13<br/>(genericcloud QCOW2)"]
+        Packer["Packer"]
+        Ansible["Ansible<br/>(Docker, packages)"]
+        Cleanup["Cleanup<br/>(SSH host keys, cloud-init state)"]
+        Golden["Golden Image<br/>(packer-debian.qcow2)"]
 
-        Alloy["Alloy"]
+        Debian --> Packer
+        Packer --> Ansible
+        Ansible --> Cleanup
+        Cleanup --> Golden
     end
 
-    subgraph Server["<b>Server (homelab.internal)</b>"]
-        Prometheus["Prometheus"]
-        Loki["Loki"]
-        Grafana["Grafana"]
-    end
+    subgraph Deploy["<b>VM Deployment</b>"]
+        direction TB
 
-    Collectors -->|"metrics; logs"| Alloy
-    Alloy -->|"metrics"| Prometheus
-    Alloy -->|"logs"| Loki
-    Prometheus -->|"datasource"| Grafana
-    Loki -->|"datasource"| Grafana
+        Seed["Cloud-init Seed<br/>(SSH key + hostname)"]
+        Overlay["QCOW2 Overlay<br/>(backed by golden image)"]
+        Terraform["Terraform"]
+        Provider["libvirt Provider"]
+        Libvirt["libvirt / KVM"]
+        VM["Running VM"]
+        PostSetup["Post-boot Configuration<br/>(Ansible: CA certs, homelab repo)"]
+
+        Seed --> Terraform
+        Golden -->|"Backing</br>image"| Overlay
+        Overlay --> Terraform
+        Terraform --> Provider
+        Provider --> Libvirt
+        Libvirt --> VM
+        VM --> PostSetup
+    end
 
     %% Styling
-    classDef obs fill:#7a063c,color:#fff,stroke:#401020
+    classDef build fill:#1a3a5c,color:#fff,stroke:#0f2440
+    classDef deploy fill:#558911,color:#fff,stroke:#281040
 
-    class Alloy,NodeExp,CadvisorExp,DockerLogs,JournalLogs,FileLogs,SmartctlExp,SystemdExp obs
-    class Prometheus,Loki,Grafana obs
+    class Debian,Packer,Ansible,Cleanup,Golden build
+    class Seed,Overlay,Terraform,Provider,Libvirt,VM,PostSetup deploy
 ```
 
-The laptop runs Alloy which collects metrics and logs locally and pushes them to the server's Prometheus and Loki instances via Tailscale.
+The pipeline builds a reproducible Debian golden image and uses it to provision fully configured VMs. A complete run typically takes ~**6 minutes**.
 
-## Services
-List of all Docker container services exposed by the reverse proxy:
-| Service | Domain | Port |
-|---|---|---|
-| Caddy | `*.homelab.internal` | 443 |
-| Authelia | `auth.homelab.internal` | 9091 |
-| Pi-hole | `pihole.homelab.internal` | 53, 8090 |
-| ntfy | `ntfy.homelab.internal` | 1234 |
-| Forgejo | `git.homelab.internal` | 3000 |
-| Immich Server | `immich.homelab.internal` | 2283 |
-| Syncthing | `syncthing.homelab.internal` | 8384 |
-| Navidrome | `music.homelab.internal` | 4533 |
-| Grafana | `grafana.homelab.internal` | 3001 |
-| Prometheus | `prometheus.homelab.internal` | 9090 |
-| Loki | `loki.homelab.internal` | 3100 |
+The production VM is managed separately from the staging VM, allowing infrastructure and service changes to be tested before deployment.
 
-Service dependencies (e.g. Immich's ML, PostgreSQL, Valkey containers for Immich) are not shown in the diagram.
+See [`iaac/`](iaac/README.md) for details.
 
-## Authentication
-All services are secured behind Authelia, which provides single sign-on (SSO).
+## Repository Structure
+Each top-level directory represents a self-contained component. The most significant components include:
+```
+.
+├── auth/              # Authelia SSO (depends on Immich's PostgreSQL)
+├── autoheal/          # Docker container health 
+├── caddy/             # Reverse proxy (Ansible-managed)
+├── forgejo/           # Self-hosted Git with CI/CD runner with ntfy integration for notifications
+├── iaac/              # VM golden image pipeline (Packer + Ansible + Terraform)
+├── immich/            # Photo management (server, ML, PostgreSQL, Valkey)
+├── ntfy/              # Push notification server
+├── observability/     # Prometheus, Loki, Grafana, Alertmanager, Alloy
+├── pihole/            # DNS server and ad blocker (Ansible-managed)
+└── .github/           # CI/CD workflows and ntfy-notify action
+```
 
-## DNS
-All traffic goes through Pi-hole (from host and Docker containers). At the moment only the server is using Pi-hole and other devices in the Tailnet use their default DNS.
+## Requirements
+- **Host**: Debian 13 with KVM support, rootless Docker, Tailscale
+- **Tools**: `direnv`, `just`, `ansible`
+- **Access**: A device connected to the homelab tailnet
 
-Tailscale Split DNS maps `*.homelab.internal` → `100.xxx.xxx.xxx:53` (Pi-hole on `tailscale0` interface).
+## Usage
+Each directory contains its own `README.md` with specific setup and deployment instructions. General workflow:
+```sh
+# 1. Clone and configure
+cp .env.example .env
+vim .env
+direnv allow
 
-## Security
-The only services exposed on `tailscale0` interface are:
-- Caddy (ports 80 TCP, 443 TCP / UDP)
-- Pi-hole (port 53 TCP / UDP)
-- Syncthing (port 22000 TCP / UDP)
+# 2. Start all services
+./all.sh start
 
-All the remaining services are bound only to `127.0.0.1` and are accessed via reverse proxy.
+# 3. Stop all services
+./all.sh stop
+```
 
-The host firewall (UFW) denies all incoming traffic by default, meaning the server is invisible to the public internet. Services are reachable only via Tailscale (`tailscale0` interface), which manages its own firewall rules independently. No port forwarding is required.
+## CI/CD
+The repository uses GitHub Actions to validate changes and deploy the homelab configuration to the production VM. Renovate automates dependency updates.
 
-Self-signed SSL certificates are used. The initial idea was to use Tailscale's HTTPS provisioning. Currently, however, SSL certificates were only available for individual `*.<tailnet-domain>.ts.net` domains, with no support for wildcard certificates.
+| Secret | Description |
+|---|---|
+| `NTFY_TOKEN` | ntfy access token for deployment notifications |
+| `VM_SSH_PRIVATE_KEY_B64` | Base64-encoded SSH private key for VM provisioning |
 
-## Observability
-node_exporter, cAdvisor and blackbox exporter are embedded in Alloy, while others are a separate unit.
-
-Alloy uses a push-based model — metrics and logs are pushed to Prometheus and Loki (as opposed to the more common pull-based approach). This makes adding nodes trivial: just install Alloy on any machine in the Tailnet and point it at the server.
+## Future Work
+- [ ] Add backup and restore strategy.
