@@ -5,6 +5,9 @@ Each major component is self-contained and includes its own `README.md` with dep
 
 > This repository serves as a documentation mirror, while the implementation is maintained in a private repository.
 
+## Purpose
+This homelab serves as both functional infrastructure and a personal services hub. It provides practical applications, automation, and quality-of-life enhancements, while also serving as a platform for designing, deploying, and operating production-oriented infrastructure.
+
 ## Architecture
 ```mermaid
 %%{init: {
@@ -121,12 +124,13 @@ flowchart TB
     class Alloy,Prometheus,Loki,Grafana,Alertmanager,AlertBridge,NodeExp,CadvisorExp,BlackboxExp,DockerLogs,JournalLogs,FileLogs,SmartctlExp,SystemdExp,PiholeExp obs
 ```
 
-Services are reachable through the private Tailscale network without exposing the host directly to the public internet or requiring port forwarding. Caddy acts as the main ingress point, Authelia provides centralized authentication and Pi-hole internal DNS resolution.
+Services are reachable through the private Tailscale network without exposing the host directly to the public internet or requiring port forwarding. Caddy acts as the main ingress point, Authelia handles centralized authentication and Pi-hole resolves internal DNS.
 
 Alloy collects metrics and logs from the host, containers and additional Tailnet devices, forwarding them to centralized Prometheus and Loki instances. Grafana provides visualization, while Alertmanager routes alerts to ntfy.
 
 The homelab uses separate staging and production VMs. Changes can be tested in staging before being deployed to production.
 
+## Observability
 See [`observability/`](observability/README.md) for details.
 
 ## Infrastructure Provisioning
@@ -220,6 +224,7 @@ Each directory contains its own `README.md` with specific setup and deployment i
 cp .env.example .env
 vim .env
 direnv allow
+docker network create homelab-net
 
 # 2. Start all services
 ./all.sh start
@@ -230,11 +235,6 @@ direnv allow
 
 ## CI/CD
 The repository uses GitHub Actions to validate changes and deploy the homelab configuration to the production VM. Renovate automates dependency updates.
-
-| Secret | Description |
-|---|---|
-| `NTFY_TOKEN` | ntfy access token for deployment notifications |
-| `VM_SSH_PRIVATE_KEY_B64` | Base64-encoded SSH private key for VM provisioning |
 
 ## Future Work
 - [ ] Add backup and restore strategy.
