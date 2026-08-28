@@ -135,9 +135,6 @@ just vm-ssh NAME
 ### Terraform
 Terraform uses the libvirt provider to manage the VM lifecycle through libvirt and QEMU/KVM:
 ```sh
-# Initialize Terraform (first time only)
-just tf-init
-
 # Plan deployment
 just tf-plan -var vm_name=NAME
 

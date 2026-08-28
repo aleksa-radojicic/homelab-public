@@ -131,7 +131,7 @@ Alloy collects metrics and logs from the host, containers and additional Tailnet
 The homelab uses separate staging and production VMs. Changes can be tested in staging before being deployed to production.
 
 ## Observability
-See [`observability/`](observability/README.md) for details.
+See [`observability/`](observability/README.md) for the observability architecture, configuration, dashboard screenshots, and alerting examples.
 
 ## Infrastructure Provisioning
 ```mermaid

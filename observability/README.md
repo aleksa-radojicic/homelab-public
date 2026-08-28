@@ -50,6 +50,54 @@ ansible-playbook --ask-become-pass alloy.yaml
 
 Deploy observability stack:
 ```sh
-docker network create homelab-net
 docker compose up -d
 ```
+
+### Grafana alert forwarding (manual)
+After first deploy, enable Grafana-managed alert forwarding to Alertmanager via the Grafana UI (requires the source to be editable):
+1. Go to `<grafana_url>/alerting/admin/alertmanager`
+2. Under **Other Alertmanagers**, click **Alertmanager** → **Enable**
+3. Confirm it shows 'Receiving Grafana-managed alerts'
+
+This step cannot be provisioned via YAML — it is a one-time UI toggle.
+
+## Screenshots
+
+### Main Dashboard
+Overview of the homelab, covering host resources, hardware temperatures, systemd and container health, alerts, container network activity, and logs. Selected CPU/GPU telemetry and logs from the laptop are also included for cross-system visibility.
+
+<p align="center">
+  <img src="screenshots/main.png" alt="Main Grafana dashboard" width="1200">
+</p>
+
+### cAdvisor Dashboard
+Container-level resource monitoring with CPU, memory, network, and container
+health metrics across the Docker workload.
+
+<p align="center">
+  <img src="screenshots/cadvisor.png" alt="cAdvisor Grafana dashboard" width="1200">
+</p>
+
+### Caddy Dashboard
+Reverse-proxy monitoring covering request volume, response status, latency,
+and traffic metrics for services exposed through Caddy.
+
+<p align="center">
+  <img src="screenshots/caddy.png" alt="Caddy Grafana dashboard" width="1200">
+</p>
+
+### Blackbox Exporter
+Service availability and endpoint monitoring with HTTP status, TLS validation,
+DNS lookup, probe duration, and HTTP request phase metrics.
+
+<p align="center">
+  <img src="screenshots/blackbox-exporter.png" alt="Blackbox Exporter Grafana dashboard" width="1200">
+</p>
+
+### Alerting
+Example of a Prometheus alert routed through Alertmanager and delivered to a
+mobile device through ntfy.
+
+<p align="center">
+  <img src="screenshots/ntfy-alert.png" alt="ntfy alert notification" height="700" width="350">
+</p>
